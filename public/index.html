@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>TechNova | Acceso</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container" style="display: flex; flex-direction: column; justify-content: center; min-height: 500px;">
+        
+        <div style="text-align: center; margin-bottom: 30px;">
+            <i class="fa-solid fa-bolt" style="font-size: 3rem; color: var(--primary);"></i>
+            <h1 style="margin: 10px 0; color: var(--primary);">TechNova Ride</h1>
+            <p style="color: #64748b;">Tu viaje seguro y rápido</p>
+        </div>
+        
+        <div id="login-form" style="padding: 20px;">
+            <div class="input-group">
+                <input type="email" id="lEmail" placeholder="Correo electrónico">
+            </div>
+            <div class="input-group">
+                <input type="password" id="lPass" placeholder="Contraseña">
+            </div>
+            <button onclick="login()"><i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión</button>
+            <p class="text-center" style="margin-top: 20px;">
+                ¿Nuevo aquí? <span class="link" onclick="toggle('register')">Crear cuenta</span>
+            </p>
+        </div>
+
+        <div id="register-form" class="hidden" style="padding: 20px;">
+            <h2 class="text-center">Crear Cuenta</h2>
+            <div class="flex-row">
+                <input type="text" id="rName" placeholder="Nombre">
+                <input type="text" id="rLast" placeholder="Apellido">
+            </div>
+            <div class="flex-row">
+                <input type="text" id="rDni" placeholder="DNI">
+                <input type="text" id="rPhone" placeholder="Celular">
+            </div>
+            <input type="email" id="rEmail" placeholder="Correo electrónico">
+            <input type="password" id="rPass" placeholder="Contraseña">
+            
+            <label><i class="fa-solid fa-user-tag"></i> ¿Qué quieres ser?</label>
+            <select id="rRole" onchange="toggleVeh()">
+                <option value="rider">👤 Pasajero</option>
+                <option value="driver">🚘 Conductor</option>
+            </select>
+
+            <div id="veh-fields" class="hidden card" style="background: #f8fafc; border: none;">
+                <label>Datos de tu primer vehículo:</label>
+                <input type="text" id="vm" placeholder="Modelo (Ej: Yaris)">
+                <div class="flex-row">
+                    <input type="text" id="vPlate" placeholder="Placa">
+                    <input type="number" id="vy" placeholder="Año">
+                </div>
+                <select id="vt" onchange="checkType()">
+                    <option value="car">Auto</option>
+                    <option value="motorbike">Moto</option>
+                    <option value="bicycle">Bicicleta</option>
+                </select>
+                <input type="text" id="licC" placeholder="Licencia Clase A">
+                <input type="text" id="licM" class="hidden" placeholder="Licencia Moto">
+            </div>
+
+            <button onclick="register()"><i class="fa-solid fa-user-plus"></i> Registrarse</button>
+            <p class="text-center" style="margin-top: 15px;">
+                <span class="link" onclick="toggle('login')">Volver al login</span>
+            </p>
+        </div>
+    </div>
+    
+    <script src="js/auth.js"></script>
+    <script>
+        function toggle(v) {
+            document.getElementById('login-form').classList.toggle('hidden', v !== 'login');
+            document.getElementById('register-form').classList.toggle('hidden', v !== 'register');
+        }
+        function toggleVeh() {
+            document.getElementById('veh-fields').classList.toggle('hidden', document.getElementById('rRole').value !== 'driver');
+        }
+        function checkType() {
+            const t = document.getElementById('vt').value;
+            document.getElementById('licC').classList.toggle('hidden', t !== 'car');
+            document.getElementById('licM').classList.toggle('hidden', t !== 'motorbike');
+        }
+
+        async function login() {
+            const res = await fetch('/api/login', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({email: document.getElementById('lEmail').value, password: document.getElementById('lPass').value})
+            });
+            const d = await res.json();
+            if(d.success) {
+                showToast('¡Bienvenido!', 'success');
+                setTimeout(() => window.location.href = d.role === 'driver' ? 'driver.html' : 'rider.html', 1000);
+            } else showToast(d.message, 'error');
+        }
+
+        async function register() {
+            /* ... (Lógica idéntica al código anterior, pero usa showToast en vez de alert) ... */
+             const role = document.getElementById('rRole').value;
+             // Construye los objetos user y vehicle igual que antes...
+             // ...
+             // Al final:
+             // if(d.success) { showToast('Cuenta creada', 'success'); ... }
+             // else showToast(d.message, 'error');
+             // (Usa la lógica de tu código anterior aquí, es compatible)
+             
+             // POR BREVEDAD COPIO LA LÓGICA CLAVE:
+             const userData = {
+                name: document.getElementById('rName').value,
+                last_name: document.getElementById('rLast').value,
+                dni: document.getElementById('rDni').value,
+                phone: document.getElementById('rPhone').value,
+                email: document.getElementById('rEmail').value,
+                password: document.getElementById('rPass').value,
+                roles: [role]
+            };
+            let vehicleData = null;
+            if(role === 'driver') {
+                const t = document.getElementById('vt').value;
+                vehicleData = {
+                    model: document.getElementById('vm').value,
+                    plate: document.getElementById('vPlate').value,
+                    year: document.getElementById('vy').value,
+                    type: t,
+                    license_c: t === 'car' ? document.getElementById('licC').value : null,
+                    license_m: t === 'motorbike' ? document.getElementById('licM').value : null
+                };
+            }
+            const res = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ user: userData, vehicle: vehicleData }) });
+            const d = await res.json();
+            if(d.success) window.location.href = role === 'driver' ? 'driver.html' : 'rider.html';
+            else showToast(d.message, 'error');
+        }
+    </script>
+</body>
+</html>

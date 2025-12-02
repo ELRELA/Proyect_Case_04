@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Panel Conductor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-controls">
+                <div>
+                    <h2><i class="fa-solid fa-taxi"></i> Panel Driver</h2>
+                    <small id="userDisplay">Cargando...</small>
+                </div>
+                <button onclick="logout()" class="logout-btn"><i class="fa-solid fa-power-off"></i></button>
+            </div>
+        </header>
+
+        <div style="padding: 0 15px; padding-bottom: 70px;">
+            
+            <div id="tab-offers" class="tab-content">
+                <h3 style="margin-top:0;">📍 Solicitudes Cercanas</h3>
+                <div id="veh-warning" class="card" style="background:#fff7ed; border-color:#fdba74; display:none;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Selecciona un vehículo en "Mi Auto".
+                </div>
+                <div id="offers-list"></div>
+            </div>
+
+            <div id="tab-active" class="tab-content hidden">
+                <h3 style="margin-top:0;">🚖 Viaje en Curso</h3>
+                <div id="active-trip"></div>
+            </div>
+
+            <div id="tab-vehicles" class="tab-content hidden">
+                <h3 style="margin-top:0;">🚗 Mis Vehículos</h3>
+                <div id="my-vehicles-list"></div>
+                <hr style="margin: 15px 0; border:0; border-top:1px solid #eee;">
+                <button onclick="document.getElementById('add-veh-form').classList.toggle('hidden')" style="background:var(--dark);">
+                    <i class="fa-solid fa-plus"></i> Agregar Nuevo
+                </button>
+                <div id="add-veh-form" class="hidden" style="margin-top:10px;">
+                    <input type="text" id="nvModel" placeholder="Modelo">
+                    <input type="text" id="nvPlate" placeholder="Placa">
+                    <input type="number" id="nvYear" placeholder="Año">
+                    <select id="nvType" onchange="checkType()">
+                        <option value="car">Auto</option>
+                        <option value="motorbike">Moto</option>
+                    </select>
+                    <div id="divLicC"><input type="text" id="nvLicC" placeholder="Licencia Auto"></div>
+                    <div id="divLicM" class="hidden"><input type="text" id="nvLicM" placeholder="Licencia Moto"></div>
+                    <button onclick="addVehicle()" style="background:var(--secondary);">Guardar</button>
+                </div>
+            </div>
+
+            <div id="tab-history" class="tab-content hidden">
+                <h3 style="margin-top:0;">📜 Registro de Ganancias</h3>
+                <div id="history-list"></div>
+            </div>
+        </div>
+
+        <div class="nav-bar" style="position:absolute; bottom:0; left:0; right:0; margin:0; border-top:1px solid #ddd;">
+            <button class="nav-item active" onclick="showTab('offers', this)"><i class="fa-solid fa-list-ul"></i> Ofertas</button>
+            <button class="nav-item" onclick="showTab('active', this)"><i class="fa-solid fa-route"></i> Ruta</button>
+            <button class="nav-item" onclick="showTab('vehicles', this)"><i class="fa-solid fa-car"></i> Mi Auto</button>
+            <button class="nav-item" onclick="showTab('history', this)"><i class="fa-solid fa-clock-rotate-left"></i> Historial</button>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script>
+        let currentUser;
+        let activeVehicleId = null;
+
+        async function init() {
+            currentUser = await protectRoute('driver');
+            if(currentUser) {
+                document.getElementById('userDisplay').innerText = `${currentUser.name} ${currentUser.last_name}`;
+                loadVehicles();
+                startPolling();
+            }
+        }
+
+        function showTab(name, btn) {
+            document.querySelectorAll('.tab-content').forEach(d => d.classList.add('hidden'));
+            document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+            document.getElementById(`tab-${name}`).classList.remove('hidden');
+            if(btn) btn.classList.add('active');
+        }
+
+        function startPolling() { loadTripsData(); setInterval(loadTripsData, 3000); }
+
+        async function loadTripsData() {
+            const res = await fetch('/api/trips');
+            const trips = await res.json();
+            
+            // --- OFERTAS ---
+            const offers = trips.filter(t => t.status === 'requested');
+            document.getElementById('offers-list').innerHTML = offers.length ? offers.map(t => `
+                <div class="card">
+                    <div class="card-header">
+                        <span class="price-tag">S/. ${t.payment.amount}</span>
+                        <span class="badge">${getPayIcon(t.payment.payment_method)}</span>
+                    </div>
+                    <div class="route-detail">
+                        <div><i class="fa-solid fa-circle-dot" style="color:var(--primary)"></i> ${t.start_location}</div>
+                        <div style="margin-left:6px; border-left:2px dashed #ccc; height:10px;"></div>
+                        <div><i class="fa-solid fa-location-dot" style="color:var(--danger)"></i> ${t.end_location}</div>
+                    </div>
+                    <small><i class="fa-solid fa-user"></i> ${t.rider_id?.name || 'Pasajero'} (DNI: ${t.rider_id?.dni || '---'})</small>
+                    <button onclick="acceptTrip('${t._id}')" style="background:var(--secondary); margin-top:10px;">Aceptar</button>
+                </div>
+            `).join('') : '<p class="text-center" style="color:#888; margin-top:30px;">Buscando pasajeros...</p>';
+
+            // --- ACTIVO ---
+            const active = trips.find(t => t.status === 'ongoing' && t.driver_id?._id === currentUser._id);
+            document.getElementById('active-trip').innerHTML = active ? `
+                <div class="card" style="border-color:var(--secondary);">
+                    <h3>Llevando a ${active.rider_id?.name}</h3>
+                    <div class="route-detail">📍 Destino: <strong>${active.end_location}</strong></div>
+                    <button onclick="finishTrip('${active._id}')" style="background:var(--secondary);">🏁 Finalizar</button>
+                </div>` : '<p class="text-center">Libre.</p>';
+
+            // --- HISTORIAL DETALLADO ---
+            const hist = trips.filter(t => (t.status === 'completed' || t.status === 'cancelled') && t.driver_id?._id === currentUser._id);
+            document.getElementById('history-list').innerHTML = hist.map(t => {
+                // TRUCO: Obtener fecha desde el ID de Mongo
+                const date = new Date(parseInt(t._id.substring(0, 8), 16) * 1000).toLocaleString();
+                const isDone = t.status === 'completed';
+                
+                return `
+                <div class="card" style="padding:12px; border-left: 4px solid ${isDone ? 'var(--secondary)' : 'var(--danger)'}">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <small style="color:#888"><i class="fa-regular fa-calendar"></i> ${date}</small>
+                        <span class="badge" style="background:${isDone?'#dcfce7':'#fee2e2'}; color:${isDone?'green':'red'}">${t.status}</span>
+                    </div>
+                    
+                    <div style="font-weight:600; margin-bottom:5px;">${t.end_location}</div>
+                    <small style="color:#555"><i class="fa-solid fa-turn-up"></i> Desde: ${t.start_location}</small>
+                    
+                    <hr style="border:0; border-top:1px dashed #eee; margin:8px 0;">
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-size:0.9rem;"><i class="fa-solid fa-user"></i> ${t.rider_id?.name || 'Desc.'}</div>
+                            <small style="color:#666">${getPayIcon(t.payment.payment_method)} ${t.payment.payment_method}</small>
+                        </div>
+                        <div style="font-size:1.2rem; font-weight:bold; color:var(--dark);">S/. ${t.payment.amount}</div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // --- UTILS ---
+        function getPayIcon(method) {
+            if(method === 'card') return '<i class="fa-regular fa-credit-card"></i>';
+            if(method === 'yape') return '<i class="fa-solid fa-mobile-screen"></i>';
+            return '<i class="fa-solid fa-money-bill-wave"></i>';
+        }
+
+        // --- GESTIÓN VEHÍCULOS (Igual que antes) ---
+        async function loadVehicles() {
+            const res = await fetch('/api/vehicles/my');
+            const vs = await res.json();
+            if(vs.length > 0 && !activeVehicleId) activeVehicleId = vs[0]._id;
+            document.getElementById('veh-warning').style.display = activeVehicleId ? 'none' : 'block';
+            
+            document.getElementById('my-vehicles-list').innerHTML = vs.map(v => `
+                <div class="vehicle-card ${v._id === activeVehicleId ? 'selected' : ''}" onclick="selectVehicle('${v._id}')">
+                    <div class="vehicle-icon"><i class="fa-solid ${v.type==='motorbike'?'fa-motorcycle':'fa-car'}"></i></div>
+                    <div style="flex:1;">
+                        <div style="font-weight:600;">${v.model}</div>
+                        <div class="badge">${v.plate}</div>
+                    </div>
+                    ${v._id === activeVehicleId ? '<i class="fa-solid fa-circle-check" style="color:var(--secondary);"></i>' : ''}
+                </div>
+            `).join('');
+        }
+        function selectVehicle(id) { activeVehicleId = id; loadVehicles(); }
+        
+        async function addVehicle() {
+             const t = document.getElementById('nvType').value;
+             const data = {
+                model: document.getElementById('nvModel').value, plate: document.getElementById('nvPlate').value,
+                year: document.getElementById('nvYear').value, type: t,
+                license_c: t==='car'?document.getElementById('nvLicC').value:null, license_m: t==='motorbike'?document.getElementById('nvLicM').value:null
+            };
+            await fetch('/api/vehicles', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+            showToast('Vehículo agregado', 'success'); loadVehicles();
+            document.getElementById('add-veh-form').classList.add('hidden');
+        }
+        function checkType() { 
+            const t = document.getElementById('nvType').value;
+            document.getElementById('divLicC').classList.toggle('hidden', t !== 'car');
+            document.getElementById('divLicM').classList.toggle('hidden', t !== 'motorbike');
+        }
+
+        // --- ACCIONES VIAJE ---
+        async function acceptTrip(id) {
+            if(!activeVehicleId) return showToast('Selecciona un vehículo', 'warning');
+            await fetch(`/api/trips/${id}/accept`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({vehicle_id: activeVehicleId}) });
+            showTab('active', document.querySelectorAll('.nav-item')[1]);
+            loadTripsData();
+        }
+        async function finishTrip(id) {
+            if(!confirm('¿Terminar?')) return;
+            await fetch(`/api/trips/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'completed'}) });
+            showTab('history', document.querySelectorAll('.nav-item')[3]);
+            loadTripsData();
+        }
+
+        init();
+    </script>
+</body>
+</html>
