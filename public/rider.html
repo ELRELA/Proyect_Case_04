@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/styles.css">
     <style>
+        /* Estilos del Mapa y Buscador */
         #map { height: 250px; width: 100%; border-radius: 12px; margin-bottom: 15px; border: 2px solid #e2e8f0; z-index: 1; }
         .autocomplete-container { position: relative; }
         .suggestions-list {
@@ -16,6 +17,19 @@
         }
         .suggestion-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.9rem; }
         .suggestion-item:hover { background: #f0f9ff; color: var(--primary); }
+
+        /* ESTILOS DEL TEMPORIZADOR */
+        .timer-container {
+            margin-top: 10px; background: #f1f5f9; border-radius: 4px; height: 6px; overflow: hidden; position: relative;
+        }
+        .timer-bar {
+            height: 100%; background: #f59e0b; width: 100%; transition: width 1s linear;
+        }
+        .timer-label { font-size: 0.75rem; color: #64748b; display: flex; justify-content: space-between; margin-top: 2px; }
+        
+        /* Animación para llamar la atención */
+        .pulse-text { animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
@@ -35,6 +49,7 @@
             <div id="tab-request" class="tab-content">
                 <div class="card" style="border-left-color: var(--primary);">
                     <h3 style="margin-top:0;"><i class="fa-solid fa-magnifying-glass-location"></i> Nuevo Viaje</h3>
+                    
                     <div id="map"></div>
                     
                     <label>Origen</label>
@@ -67,12 +82,12 @@
             </div>
 
             <div id="tab-status" class="tab-content hidden">
-                <h3 style="margin-top:0;">⏳ Viajes Activos</h3>
+                <h3 style="margin-top:0;">⏳ Estado del Viaje</h3>
                 <div id="active-list"></div>
             </div>
 
             <div id="tab-history" class="tab-content hidden">
-                <h3 style="margin-top:0;">📜 Historial de Rutas</h3>
+                <h3 style="margin-top:0;">📜 Historial</h3>
                 <div id="history-list"></div>
             </div>
         </div>
@@ -88,6 +103,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         let currentUser, map, markerOrigin, markerDest, polyline, searchTimeout;
+        const TIME_LIMIT = 60; // 60 Segundos límite
 
         async function init() {
             currentUser = await protectRoute('rider');
@@ -98,23 +114,28 @@
             }
         }
 
-        // --- MAPA & BÚSQUEDA (Igual que antes) ---
+        /* --- TRUCO: OBTENER HORA DEL ID DE MONGO (SIN TOCAR SERVIDOR) --- */
+        function getTimestampFromId(id) {
+            return parseInt(id.substring(0, 8), 16) * 1000;
+        }
+
+        // --- MAPA LEAFLET ---
         function initMap() {
             map = L.map('map').setView([-12.0464, -77.0428], 12);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             map.on('click', function(e) {
-                if(!markerOrigin) setLocation('origin', e.latlng, "Manual");
-                else if(!markerDest) setLocation('dest', e.latlng, "Manual");
+                if(!markerOrigin) setLocation('origin', e.latlng, "Ubicación Manual");
+                else if(!markerDest) setLocation('dest', e.latlng, "Ubicación Manual");
             });
         }
-        function searchAddress(query, type) {
+        function searchAddress(q, type) { /* ... (Igual que antes) ... */ 
             clearTimeout(searchTimeout);
             const list = document.getElementById(`suggestions-${type}`);
-            if(query.length < 3) return list.style.display = 'none';
+            if(q.length < 3) return list.style.display = 'none';
             searchTimeout = setTimeout(async () => {
-                const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=pe&limit=3`;
                 try {
-                    const res = await fetch(url); const data = await res.json();
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=pe&limit=3`);
+                    const data = await res.json();
                     list.innerHTML = '';
                     if(data.length) {
                         list.style.display = 'block';
@@ -128,14 +149,12 @@
                 } catch(e){}
             }, 500);
         }
-        function setLocation(type, latlng, text) {
+        function setLocation(type, latlng, text) { /* ... (Igual que antes) ... */
             document.getElementById(type).value = text.split(',')[0];
             const iconUrl = type==='origin'?'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png':'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png';
             const icon = new L.Icon({iconUrl, shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]});
-            
             if(type==='origin') { if(markerOrigin) map.removeLayer(markerOrigin); markerOrigin = L.marker(latlng, {icon}).addTo(map).bindPopup("Inicio").openPopup(); }
             else { if(markerDest) map.removeLayer(markerDest); markerDest = L.marker(latlng, {icon}).addTo(map).bindPopup("Fin").openPopup(); }
-            
             map.setView(latlng, 14);
             if(markerOrigin && markerDest) {
                 if(polyline) map.removeLayer(polyline);
@@ -143,14 +162,13 @@
                 map.fitBounds(new L.featureGroup([markerOrigin, markerDest]).getBounds().pad(0.2));
             }
         }
-        function resetMap() {
+        function resetMap() { /* ... (Igual que antes) ... */
             if(markerOrigin) map.removeLayer(markerOrigin); if(markerDest) map.removeLayer(markerDest); if(polyline) map.removeLayer(polyline);
-            markerOrigin=null; markerDest=null;
-            document.getElementById('origin').value=''; document.getElementById('dest').value='';
+            markerOrigin=null; markerDest=null; document.getElementById('origin').value=''; document.getElementById('dest').value='';
             map.setView([-12.0464, -77.0428], 12);
         }
 
-        // --- LÓGICA VIAJES ---
+        // --- LÓGICA DE VIAJES ---
         function showTab(name, btn) {
             document.querySelectorAll('.tab-content').forEach(d => d.classList.add('hidden'));
             document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
@@ -158,65 +176,135 @@
             if(btn) btn.classList.add('active');
             if(name==='request') setTimeout(()=>map.invalidateSize(), 100);
         }
-        function startPolling() { loadTrips(); setInterval(loadTrips, 3000); }
+
+        function startPolling() { loadTrips(); setInterval(loadTrips, 1000); } // Loop de 1 segundo
 
         async function requestTrip() {
             const org = document.getElementById('origin').value; const dst = document.getElementById('dest').value; const amt = document.getElementById('amt').value;
-            if(!org || !dst || !amt) return showToast('Datos incompletos', 'error');
+            if(!org || !dst || !amt) return showToast('Completa los campos', 'error');
             const trip = { rider_id: currentUser._id, start_location: org, end_location: dst, status: 'requested', payment: {amount:parseFloat(amt), payment_method:document.getElementById('method').value}};
             await fetch('/api/trips', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(trip)});
-            showToast('Solicitando...', 'success'); resetMap(); document.getElementById('amt').value='';
+            showToast('Solicitud enviada (60s)', 'success');
+            resetMap(); document.getElementById('amt').value='';
             showTab('status', document.querySelectorAll('.nav-item')[1]); loadTrips();
         }
-        async function cancelTrip(id) {
-            if(confirm('¿Cancelar?')) await fetch(`/api/trips/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'cancelled'})});
+
+        async function cancelTrip(id, auto = false) {
+            if(!auto && !confirm('¿Cancelar viaje?')) return;
+            await fetch(`/api/trips/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'cancelled'})});
+            if(auto) showToast('⌛ Tiempo agotado: Viaje cancelado', 'error');
+            else showToast('Has cancelado el viaje', 'info');
             loadTrips();
         }
 
-        // --- RENDERIZADO DETALLADO ---
+        // --- NUEVO: FUNCIÓN MODIFICAR PRECIO ---
+        async function modifyPrice(id, currentAmount) {
+            const newPrice = prompt("Ingresa tu nueva oferta para atraer conductores:", currentAmount);
+            if(newPrice && parseFloat(newPrice) !== currentAmount) {
+                // Enviamos SOLO lo que cambia (Mongoose lo une)
+                const updateData = {
+                    payment: {
+                        amount: parseFloat(newPrice),
+                        // Nota: el backend necesita el objeto payment completo o usar $set.
+                        // Para simplificar aquí, asumimos que mantenemos el metodo.
+                        // Lo ideal es enviar el payment_method también si lo tuviéramos a mano en la variable,
+                        // pero para este ejemplo simple, asumiremos que el backend fusiona o reenvíamos el dato si lo tuviéramos.
+                        // TRUCO: Para no perder el método de pago, el backend hace un merge simple o lo reenviamos si lo tenemos.
+                        // Vamos a simplificar asumiendo que el backend reemplaza.
+                        // Mejor estrategia cliente: pedir al backend actualizar solo 'payment.amount'.
+                        // Pero como estamos "sin tocar backend", enviaremos la estructura payment.
+                    } 
+                };
+                
+                // Pequeño hack: Para no perder el payment_method, deberíamos leerlo del objeto trip actual.
+                // Como loadTrips corre cada segundo, tenemos los datos frescos.
+                // Lo haré dentro del renderizado para pasarle el metodo también.
+            }
+        }
+        
+        async function sendPriceUpdate(id, amount, method) {
+            const newPrice = prompt("Nueva oferta (S/.):", amount);
+            if(newPrice && parseFloat(newPrice) > 0) {
+                 await fetch(`/api/trips/${id}`, {
+                    method:'PUT', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                        payment: { amount: parseFloat(newPrice), payment_method: method }
+                    })
+                });
+                showToast(`Oferta subida a S/. ${newPrice}`, 'success');
+                loadTrips();
+            }
+        }
+
         async function loadTrips() {
             const res = await fetch('/api/trips'); const trips = await res.json();
             const myTrips = trips.filter(t => t.rider_id && t.rider_id._id === currentUser._id);
             const active = myTrips.filter(t => t.status === 'requested' || t.status === 'ongoing');
             
-            document.getElementById('active-list').innerHTML = active.map(t => `
-                <div class="card" style="border-left-color:${t.status==='ongoing'?'#10b981':'#f59e0b'}">
-                    <div class="card-header"><span class="badge">${t.status==='requested'?'🔍 Buscando':'🚕 En Camino'}</span><span class="price-tag">S/. ${t.payment.amount}</span></div>
-                    <div class="route-detail"><div><i class="fa-solid fa-circle-dot" style="color:var(--primary)"></i> ${t.start_location}</div><div><i class="fa-solid fa-location-dot" style="color:var(--danger)"></i> ${t.end_location}</div></div>
-                    ${t.driver_id ? `<div style="background:#f0f9ff; padding:10px; border-radius:8px; margin-top:5px;"><i class="fa-solid fa-taxi"></i> <strong>${t.driver_id.name}</strong> • ${t.vehicle_id?.model} (${t.vehicle_id?.plate})</div>` : ''}
-                    ${t.status==='requested'?`<button onclick="cancelTrip('${t._id}')" style="background:var(--danger); padding:5px; margin-top:5px; font-size:0.8rem;">Cancelar</button>`:''}
-                </div>
-            `).join('') || '<p class="text-center">Sin viajes.</p>';
+            document.getElementById('active-list').innerHTML = active.map(t => {
+                // --- LÓGICA TEMPORIZADOR CLIENT-SIDE ---
+                let timerHtml = '';
+                if(t.status === 'requested') {
+                    const created = getTimestampFromId(t._id);
+                    const now = Date.now();
+                    const diff = Math.floor((now - created) / 1000);
+                    const left = TIME_LIMIT - diff;
 
-            const hist = myTrips.filter(t => t.status === 'completed' || t.status === 'cancelled');
-            document.getElementById('history-list').innerHTML = hist.map(t => {
-                const date = new Date(parseInt(t._id.substring(0, 8), 16) * 1000).toLocaleString();
-                const isDone = t.status === 'completed';
-                
+                    if(left <= 0) {
+                        cancelTrip(t._id, true); // AUTO CANCELAR DESDE EL NAVEGADOR
+                        return '';
+                    }
+
+                    const pct = (left / TIME_LIMIT) * 100;
+                    const color = left < 10 ? '#ef4444' : '#f59e0b'; // Rojo si queda poco
+                    
+                    timerHtml = `
+                        <div class="timer-label"><span><i class="fa-solid fa-stopwatch"></i> Caduca en:</span> <span class="pulse-text" style="color:${color}; font-weight:bold;">${left}s</span></div>
+                        <div class="timer-container"><div class="timer-bar" style="width:${pct}%; background:${color};"></div></div>
+                    `;
+                }
+                // ----------------------------------------
+
                 return `
-                <div class="card" style="padding:12px; border-left: 4px solid ${isDone ? 'var(--secondary)' : 'var(--danger)'}">
-                     <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                        <small style="color:#888"><i class="fa-regular fa-calendar"></i> ${date}</small>
-                        <span class="badge" style="background:${isDone?'#dcfce7':'#fee2e2'}; color:${isDone?'green':'red'}">${t.status}</span>
+                <div class="card" style="border-left-color:${t.status==='ongoing'?'#10b981':'#f59e0b'}">
+                    <div class="card-header">
+                        <span class="badge">${t.status==='requested'?'🔍 Buscando':'🚕 En Camino'}</span>
+                        <span class="price-tag">S/. ${t.payment.amount}</span>
                     </div>
-                    <div style="font-weight:600; font-size:1rem; margin-bottom:4px;">${t.end_location}</div>
+                    
+                    ${timerHtml}
+
+                    <div class="route-detail">
+                        <div><i class="fa-solid fa-circle-dot" style="color:var(--primary)"></i> ${t.start_location}</div>
+                        <div><i class="fa-solid fa-location-dot" style="color:var(--danger)"></i> ${t.end_location}</div>
+                    </div>
                     
                     ${t.driver_id ? `
-                        <div style="background:#f8fafc; padding:8px; border-radius:6px; margin:8px 0; font-size:0.85rem; display:flex; gap:10px; align-items:center;">
-                            <div style="font-size:1.5rem; color:#64748b;"><i class="fa-solid fa-car-side"></i></div>
-                            <div>
-                                <div style="font-weight:600; color:#333;">${t.vehicle_id?.model || 'Auto'}</div>
-                                <div style="color:#666; font-size:0.8rem;">Placa: <strong>${t.vehicle_id?.plate || '---'}</strong></div>
-                            </div>
+                        <div style="background:#f0f9ff; padding:10px; border-radius:8px; margin-top:5px;">
+                            <i class="fa-solid fa-taxi"></i> <strong>${t.driver_id.name}</strong> • ${t.vehicle_id?.plate||'---'}
                         </div>
-                    ` : '<div style="margin:8px 0; font-size:0.85rem; color:#999;">Cancelado antes de asignar chofer</div>'}
+                    ` : ''}
 
-                    <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px dashed #eee; padding-top:5px;">
-                        <small><i class="fa-solid fa-user-tie"></i> ${t.driver_id?.name || '---'}</small>
-                        <span style="font-weight:bold; color:var(--dark);">S/. ${t.payment.amount}</span>
-                    </div>
-                </div>`;
-            }).join('');
+                    ${t.status === 'requested' ? `
+                        <div style="display:flex; gap:10px; margin-top:10px;">
+                            <button onclick="sendPriceUpdate('${t._id}', ${t.payment.amount}, '${t.payment.payment_method}')" style="font-size:0.85rem; padding:8px;">
+                                <i class="fa-solid fa-pencil"></i> Ofertar
+                            </button>
+                            <button onclick="cancelTrip('${t._id}')" style="background:var(--danger); font-size:0.85rem; padding:8px;">
+                                Cancelar
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `}).join('') || '<p class="text-center">Sin viajes activos</p>';
+
+            const hist = myTrips.filter(t => t.status === 'completed' || t.status === 'cancelled');
+            document.getElementById('history-list').innerHTML = hist.map(t => `
+                <div class="card" style="padding:10px;">
+                    <b>${t.end_location}</b> - <span style="color:${t.status==='completed'?'green':'red'}">${t.status}</span>
+                    <br><small>S/. ${t.payment.amount}</small>
+                </div>
+            `).join('');
         }
 
         init();
