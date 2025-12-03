@@ -22,11 +22,9 @@
             
             <div id="tab-offers" class="tab-content">
                 <h3 style="margin-top:0;">📍 Solicitudes Cercanas</h3>
-                
                 <div id="veh-warning" class="card" style="background:#fff7ed; border-color:#fdba74; display:none;">
-                    <i class="fa-solid fa-triangle-exclamation"></i> Ve a "Mi Auto" y selecciona un vehículo para trabajar.
+                    <i class="fa-solid fa-triangle-exclamation"></i> Selecciona un vehículo en "Mi Auto".
                 </div>
-                
                 <div id="offers-list"></div>
             </div>
 
@@ -65,7 +63,6 @@
                     <button onclick="addVehicle()" style="background:var(--secondary);">Guardar</button>
                 </div>
             </div>
-
             <div id="tab-history" class="tab-content hidden">
                 <h3 style="margin-top:0;">📜 Registro de Ganancias</h3>
                 <div id="history-list"></div>
@@ -84,7 +81,10 @@
     <script>
         let currentUser;
         let activeVehicleId = null;
-        let allVehicles = []; // Guardamos la lista en memoria para acceder rápido
+        
+        // CAMBIO 2: Variable Global para guardar los datos de los autos en memoria
+        // Esto evita tener que volver a pedir al servidor los datos cuando cambiamos el select
+        let allVehicles = []; 
 
         const paymentLabels = { 'cash': 'Efectivo', 'card': 'Tarjeta', 'yape': 'Yape' };
 
@@ -107,55 +107,29 @@
         function startPolling() { loadTripsData(); setInterval(loadTripsData, 3000); }
 
         async function loadTripsData() {
+            /* ... (Lógica de ofertas e historial idéntica, omitida para ahorrar espacio) ... */
+            // CÓDIGO ORIGINAL DE RENDERIZADO DE VIAJES AQUÍ
             const res = await fetch('/api/trips');
             const trips = await res.json();
-            
-            // --- OFERTAS ---
             const offers = trips.filter(t => t.status === 'requested');
             document.getElementById('offers-list').innerHTML = offers.length ? offers.map(t => `
                 <div class="card">
-                    <div class="card-header">
-                        <span class="price-tag">S/. ${t.payment.amount}</span>
-                        <span class="badge">${getPayIcon(t.payment.payment_method)}</span>
-                    </div>
-                    <div class="route-detail">
-                        <div><i class="fa-solid fa-circle-dot" style="color:var(--primary)"></i> ${t.start_location}</div>
-                        <div style="margin-left:6px; border-left:2px dashed #ccc; height:10px;"></div>
-                        <div><i class="fa-solid fa-location-dot" style="color:var(--danger)"></i> ${t.end_location}</div>
-                    </div>
-                    <small><i class="fa-solid fa-user"></i> ${t.rider_id?.name || 'Pasajero'} (DNI: ${t.rider_id?.dni || '---'})</small>
+                    <div class="card-header"><span class="price-tag">S/. ${t.payment.amount}</span><span class="badge">${getPayIcon(t.payment.payment_method)}</span></div>
+                    <div class="route-detail"><div><i class="fa-solid fa-circle-dot" style="color:var(--primary)"></i> ${t.start_location}</div><div><i class="fa-solid fa-location-dot" style="color:var(--danger)"></i> ${t.end_location}</div></div>
+                    <small><i class="fa-solid fa-user"></i> ${t.rider_id?.name || 'Pasajero'}</small>
                     <button onclick="acceptTrip('${t._id}')" style="background:var(--secondary); margin-top:10px;">Aceptar</button>
                 </div>
             `).join('') : '<p class="text-center" style="color:#888; margin-top:30px;">Buscando pasajeros...</p>';
-
-            // --- ACTIVO ---
+            
             const active = trips.find(t => t.status === 'ongoing' && t.driver_id?._id === currentUser._id);
-            document.getElementById('active-trip').innerHTML = active ? `
-                <div class="card" style="border-color:var(--secondary);">
-                    <h3>Llevando a ${active.rider_id?.name}</h3>
-                    <div class="route-detail">📍 Destino: <strong>${active.end_location}</strong></div>
-                    <button onclick="finishTrip('${active._id}')" style="background:var(--secondary);">🏁 Finalizar</button>
-                </div>` : '<p class="text-center">Libre.</p>';
+            document.getElementById('active-trip').innerHTML = active ? `<div class="card" style="border-color:var(--secondary);"><h3>Llevando a ${active.rider_id?.name}</h3><div class="route-detail">📍 Destino: <strong>${active.end_location}</strong></div><button onclick="finishTrip('${active._id}')" style="background:var(--secondary);">🏁 Finalizar</button></div>` : '<p class="text-center">Libre.</p>';
 
-            // --- HISTORIAL ---
             const hist = trips.filter(t => (t.status === 'completed' || t.status === 'cancelled') && t.driver_id?._id === currentUser._id);
             document.getElementById('history-list').innerHTML = hist.map(t => {
                 const date = new Date(parseInt(t._id.substring(0, 8), 16) * 1000).toLocaleString();
                 const isDone = t.status === 'completed';
                 const payName = paymentLabels[t.payment.payment_method] || t.payment.payment_method;
-                
-                return `
-                <div class="card" style="padding:12px; border-left: 4px solid ${isDone ? 'var(--secondary)' : 'var(--danger)'}">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                        <small style="color:#888"><i class="fa-regular fa-calendar"></i> ${date}</small>
-                        <span class="badge" style="background:${isDone?'#dcfce7':'#fee2e2'}; color:${isDone?'green':'red'}">${t.status}</span>
-                    </div>
-                    <div style="font-weight:600; margin-bottom:5px;">${t.end_location}</div>
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <small style="color:#666">${getPayIcon(t.payment.payment_method)} ${payName}</small>
-                        <div style="font-size:1.2rem; font-weight:bold; color:var(--dark);">S/. ${t.payment.amount}</div>
-                    </div>
-                </div>`;
+                return `<div class="card" style="padding:12px; border-left: 4px solid ${isDone ? 'var(--secondary)' : 'var(--danger)'}"><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><small style="color:#888"><i class="fa-regular fa-calendar"></i> ${date}</small><span class="badge" style="background:${isDone?'#dcfce7':'#fee2e2'}; color:${isDone?'green':'red'}">${t.status}</span></div><div style="font-weight:600; margin-bottom:5px;">${t.end_location}</div><div style="display:flex; justify-content:space-between; align-items:center;"><small style="color:#666">${getPayIcon(t.payment.payment_method)} ${payName}</small><div style="font-size:1.2rem; font-weight:bold; color:var(--dark);">S/. ${t.payment.amount}</div></div></div>`;
             }).join('');
         }
 
@@ -165,15 +139,17 @@
             return '<i class="fa-solid fa-money-bill-wave"></i>';
         }
 
-        // --- GESTIÓN DE VEHÍCULOS (LÓGICA NUEVA) ---
+        // =================================================================
+        // CAMBIO 3: NUEVA LÓGICA DE GESTIÓN DE VEHÍCULOS
+        // =================================================================
         async function loadVehicles() {
             const res = await fetch('/api/vehicles/my');
-            allVehicles = await res.json(); // Guardamos todos en memoria
+            allVehicles = await res.json(); // Guardamos TODOS en la variable global
             
             const selector = document.getElementById('vehicle-selector');
             const display = document.getElementById('active-vehicle-display');
 
-            // 1. Si no hay vehículos
+            // Caso A: No tiene vehículos
             if(allVehicles.length === 0) {
                 selector.innerHTML = '<option>No tienes vehículos</option>';
                 display.innerHTML = '<div class="card" style="text-align:center; color:#888;">Agrega un vehículo abajo para empezar</div>';
@@ -181,37 +157,41 @@
                 return;
             }
 
-            // 2. Si no hay uno activo seleccionado, seleccionamos el primero por defecto
+            // Caso B: Si tiene, seleccionamos el primero por defecto (si no había uno ya)
             if(!activeVehicleId) activeVehicleId = allVehicles[0]._id;
 
-            // 3. Llenar el Dropdown (Select)
+            // Llenamos el SELECT con las opciones (Solo nombre y placa)
             selector.innerHTML = allVehicles.map(v => 
                 `<option value="${v._id}" ${v._id === activeVehicleId ? 'selected' : ''}>${v.model} - ${v.plate}</option>`
             ).join('');
 
-            // 4. Renderizar SOLO EL VEHÍCULO ACTIVO
+            // Llamamos a la función que dibuja la tarjeta única
             renderActiveVehicleCard();
         }
 
+        // Esta función se activa cuando cambias el valor del SELECT
         function selectVehicle(id) {
             activeVehicleId = id;
-            renderActiveVehicleCard();
+            renderActiveVehicleCard(); // Redibujar tarjeta
         }
 
+        // CAMBIO 4: FUNCIÓN DE RENDERIZADO ÚNICO
+        // Busca el objeto completo en 'allVehicles' usando el ID seleccionado
+        // y dibuja UNA SOLA tarjeta grande con los detalles.
         function renderActiveVehicleCard() {
             const vehicle = allVehicles.find(v => v._id === activeVehicleId);
             const display = document.getElementById('active-vehicle-display');
             
             if (vehicle) {
-                // Ocultar advertencia porque ya tenemos auto
-                document.getElementById('veh-warning').style.display = 'none';
+                document.getElementById('veh-warning').style.display = 'none'; // Quitar aviso
 
-                // Mostrar tarjeta grande y bonita del auto seleccionado
                 display.innerHTML = `
                     <div class="card" style="border-left: 5px solid var(--secondary); background: #f0fdf4;">
                         <div style="display:flex; justify-content:space-between; align-items:start;">
                             <div>
-                                <h2 style="margin:0; color:var(--dark);"><i class="fa-solid ${vehicle.type==='motorbike'?'fa-motorcycle':'fa-car'}"></i> ${vehicle.model}</h2>
+                                <h2 style="margin:0; color:var(--dark);">
+                                    <i class="fa-solid ${vehicle.type==='motorbike'?'fa-motorcycle':'fa-car'}"></i> ${vehicle.model}
+                                </h2>
                                 <div style="font-size:1.2rem; font-weight:bold; color:var(--secondary); margin-top:5px;">
                                     ${vehicle.plate}
                                 </div>
@@ -226,6 +206,7 @@
                 `;
             }
         }
+        // =================================================================
         
         async function addVehicle() {
              const t = document.getElementById('nvType').value;
@@ -236,7 +217,7 @@
             };
             await fetch('/api/vehicles', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
             showToast('Vehículo agregado', 'success'); 
-            loadVehicles(); // Recargar lista
+            loadVehicles(); // Al agregar, recargamos para que aparezca en el Select
             document.getElementById('add-veh-form').classList.add('hidden');
         }
         
@@ -246,7 +227,6 @@
             document.getElementById('divLicM').classList.toggle('hidden', t !== 'motorbike');
         }
 
-        // --- ACCIONES VIAJE ---
         async function acceptTrip(id) {
             if(!activeVehicleId) return showToast('Selecciona un vehículo', 'warning');
             await fetch(`/api/trips/${id}/accept`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({vehicle_id: activeVehicleId}) });
