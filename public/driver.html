@@ -22,9 +22,11 @@
             
             <div id="tab-offers" class="tab-content">
                 <h3 style="margin-top:0;">📍 Solicitudes Cercanas</h3>
+                
                 <div id="veh-warning" class="card" style="background:#fff7ed; border-color:#fdba74; display:none;">
-                    <i class="fa-solid fa-triangle-exclamation"></i> Selecciona un vehículo en "Mi Auto".
+                    <i class="fa-solid fa-triangle-exclamation"></i> Ve a "Mi Auto" y selecciona un vehículo para trabajar.
                 </div>
+                
                 <div id="offers-list"></div>
             </div>
 
@@ -34,15 +36,25 @@
             </div>
 
             <div id="tab-vehicles" class="tab-content hidden">
-                <h3 style="margin-top:0;">🚗 Mis Vehículos</h3>
-                <div id="my-vehicles-list"></div>
-                <hr style="margin: 15px 0; border:0; border-top:1px solid #eee;">
+                <h3 style="margin-top:0;">🚗 Vehículo de Trabajo</h3>
+                
+                <label>Seleccionar Vehículo Activo:</label>
+                <select id="vehicle-selector" onchange="selectVehicle(this.value)" style="padding: 10px; margin-bottom: 15px; font-weight: bold;">
+                    <option value="">-- Cargando --</option>
+                </select>
+
+                <div id="active-vehicle-display">
+                    </div>
+
+                <hr style="margin: 20px 0; border:0; border-top:1px solid #eee;">
+                
                 <button onclick="document.getElementById('add-veh-form').classList.toggle('hidden')" style="background:var(--dark);">
-                    <i class="fa-solid fa-plus"></i> Agregar Nuevo
+                    <i class="fa-solid fa-plus"></i> Registrar Otro Vehículo
                 </button>
+
                 <div id="add-veh-form" class="hidden" style="margin-top:10px;">
-                    <input type="text" id="nvModel" placeholder="Modelo">
-                    <input type="text" id="nvPlate" placeholder="Placa">
+                    <input type="text" id="nvModel" placeholder="Modelo (Ej: Kia Rio)">
+                    <input type="text" id="nvPlate" placeholder="Placa (Ej: ABC-123)">
                     <input type="number" id="nvYear" placeholder="Año">
                     <select id="nvType" onchange="checkType()">
                         <option value="car">Auto</option>
@@ -72,18 +84,14 @@
     <script>
         let currentUser;
         let activeVehicleId = null;
+        let allVehicles = []; // Guardamos la lista en memoria para acceder rápido
 
-        // --- MAPEO DE NOMBRES DE PAGO (NUEVO) ---
-        const paymentLabels = {
-            'cash': 'Efectivo',
-            'card': 'Tarjeta',
-            'yape': 'Yape'
-        };
+        const paymentLabels = { 'cash': 'Efectivo', 'card': 'Tarjeta', 'yape': 'Yape' };
 
         async function init() {
             currentUser = await protectRoute('driver');
             if(currentUser) {
-                document.getElementById('userDisplay').innerText = `${currentUser.name} ${currentUser.last_name}`;
+                document.getElementById('userDisplay').innerText = `${currentUser.name}`;
                 loadVehicles();
                 startPolling();
             }
@@ -129,13 +137,11 @@
                     <button onclick="finishTrip('${active._id}')" style="background:var(--secondary);">🏁 Finalizar</button>
                 </div>` : '<p class="text-center">Libre.</p>';
 
-            // --- HISTORIAL DETALLADO ---
+            // --- HISTORIAL ---
             const hist = trips.filter(t => (t.status === 'completed' || t.status === 'cancelled') && t.driver_id?._id === currentUser._id);
             document.getElementById('history-list').innerHTML = hist.map(t => {
                 const date = new Date(parseInt(t._id.substring(0, 8), 16) * 1000).toLocaleString();
                 const isDone = t.status === 'completed';
-                
-                // Aquí usamos el mapeo para obtener el nombre en Español
                 const payName = paymentLabels[t.payment.payment_method] || t.payment.payment_method;
                 
                 return `
@@ -144,51 +150,82 @@
                         <small style="color:#888"><i class="fa-regular fa-calendar"></i> ${date}</small>
                         <span class="badge" style="background:${isDone?'#dcfce7':'#fee2e2'}; color:${isDone?'green':'red'}">${t.status}</span>
                     </div>
-                    
                     <div style="font-weight:600; margin-bottom:5px;">${t.end_location}</div>
-                    <small style="color:#555"><i class="fa-solid fa-turn-up"></i> Desde: ${t.start_location}</small>
-                    
-                    <hr style="border:0; border-top:1px dashed #eee; margin:8px 0;">
-                    
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <div style="font-size:0.9rem;"><i class="fa-solid fa-user"></i> ${t.rider_id?.name || 'Desc.'}</div>
-                            <small style="color:#666">${getPayIcon(t.payment.payment_method)} ${payName}</small>
-                        </div>
+                        <small style="color:#666">${getPayIcon(t.payment.payment_method)} ${payName}</small>
                         <div style="font-size:1.2rem; font-weight:bold; color:var(--dark);">S/. ${t.payment.amount}</div>
                     </div>
                 </div>`;
             }).join('');
         }
 
-        // --- UTILS ---
         function getPayIcon(method) {
             if(method === 'card') return '<i class="fa-regular fa-credit-card"></i>';
             if(method === 'yape') return '<i class="fa-solid fa-mobile-screen"></i>';
             return '<i class="fa-solid fa-money-bill-wave"></i>';
         }
 
-        // --- GESTIÓN VEHÍCULOS ---
+        // --- GESTIÓN DE VEHÍCULOS (LÓGICA NUEVA) ---
         async function loadVehicles() {
             const res = await fetch('/api/vehicles/my');
+            allVehicles = await res.json(); // Guardamos todos en memoria
             
-            const vs = await res.json();
-            const vehiclesToShow = vs.slice(0, 1);
-            if(vs.length > 0 && !activeVehicleId) activeVehicleId = vs[0]._id;
-            document.getElementById('veh-warning').style.display = activeVehicleId ? 'none' : 'block';
-            
-            document.getElementById('my-vehicles-list').innerHTML = vehiclesToShow.map(v => `
-                <div class="vehicle-card ${v._id === activeVehicleId ? 'selected' : ''}" onclick="selectVehicle('${v._id}')">
-                    <div class="vehicle-icon"><i class="fa-solid ${v.type==='motorbike'?'fa-motorcycle':'fa-car'}"></i></div>
-                    <div style="flex:1;">
-                        <div style="font-weight:600;">${v.model}</div>
-                        <div class="badge">${v.plate}</div>
-                    </div>
-                    ${v._id === activeVehicleId ? '<i class="fa-solid fa-circle-check" style="color:var(--secondary);"></i>' : ''}
-                </div>
-            `).join('');
+            const selector = document.getElementById('vehicle-selector');
+            const display = document.getElementById('active-vehicle-display');
+
+            // 1. Si no hay vehículos
+            if(allVehicles.length === 0) {
+                selector.innerHTML = '<option>No tienes vehículos</option>';
+                display.innerHTML = '<div class="card" style="text-align:center; color:#888;">Agrega un vehículo abajo para empezar</div>';
+                document.getElementById('veh-warning').style.display = 'block';
+                return;
+            }
+
+            // 2. Si no hay uno activo seleccionado, seleccionamos el primero por defecto
+            if(!activeVehicleId) activeVehicleId = allVehicles[0]._id;
+
+            // 3. Llenar el Dropdown (Select)
+            selector.innerHTML = allVehicles.map(v => 
+                `<option value="${v._id}" ${v._id === activeVehicleId ? 'selected' : ''}>${v.model} - ${v.plate}</option>`
+            ).join('');
+
+            // 4. Renderizar SOLO EL VEHÍCULO ACTIVO
+            renderActiveVehicleCard();
         }
-        function selectVehicle(id) { activeVehicleId = id; loadVehicles(); }
+
+        function selectVehicle(id) {
+            activeVehicleId = id;
+            renderActiveVehicleCard();
+        }
+
+        function renderActiveVehicleCard() {
+            const vehicle = allVehicles.find(v => v._id === activeVehicleId);
+            const display = document.getElementById('active-vehicle-display');
+            
+            if (vehicle) {
+                // Ocultar advertencia porque ya tenemos auto
+                document.getElementById('veh-warning').style.display = 'none';
+
+                // Mostrar tarjeta grande y bonita del auto seleccionado
+                display.innerHTML = `
+                    <div class="card" style="border-left: 5px solid var(--secondary); background: #f0fdf4;">
+                        <div style="display:flex; justify-content:space-between; align-items:start;">
+                            <div>
+                                <h2 style="margin:0; color:var(--dark);"><i class="fa-solid ${vehicle.type==='motorbike'?'fa-motorcycle':'fa-car'}"></i> ${vehicle.model}</h2>
+                                <div style="font-size:1.2rem; font-weight:bold; color:var(--secondary); margin-top:5px;">
+                                    ${vehicle.plate}
+                                </div>
+                                <small style="color:#666;">Año: ${vehicle.year}</small>
+                            </div>
+                            <i class="fa-solid fa-circle-check" style="font-size:2rem; color:var(--secondary);"></i>
+                        </div>
+                        <div style="margin-top:10px; padding-top:10px; border-top:1px solid #dcfce7; font-size:0.9rem;">
+                            <strong>Licencia:</strong> ${vehicle.license_c || vehicle.license_m || 'No registrada'}
+                        </div>
+                    </div>
+                `;
+            }
+        }
         
         async function addVehicle() {
              const t = document.getElementById('nvType').value;
@@ -198,9 +235,11 @@
                 license_c: t==='car'?document.getElementById('nvLicC').value:null, license_m: t==='motorbike'?document.getElementById('nvLicM').value:null
             };
             await fetch('/api/vehicles', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
-            showToast('Vehículo agregado', 'success'); loadVehicles();
+            showToast('Vehículo agregado', 'success'); 
+            loadVehicles(); // Recargar lista
             document.getElementById('add-veh-form').classList.add('hidden');
         }
+        
         function checkType() { 
             const t = document.getElementById('nvType').value;
             document.getElementById('divLicC').classList.toggle('hidden', t !== 'car');
@@ -225,4 +264,3 @@
     </script>
 </body>
 </html>
-
