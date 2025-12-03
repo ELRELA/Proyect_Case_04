@@ -73,6 +73,13 @@
         let currentUser;
         let activeVehicleId = null;
 
+        // --- MAPEO DE NOMBRES DE PAGO (NUEVO) ---
+        const paymentLabels = {
+            'cash': 'Efectivo',
+            'card': 'Tarjeta',
+            'yape': 'Yape'
+        };
+
         async function init() {
             currentUser = await protectRoute('driver');
             if(currentUser) {
@@ -125,9 +132,11 @@
             // --- HISTORIAL DETALLADO ---
             const hist = trips.filter(t => (t.status === 'completed' || t.status === 'cancelled') && t.driver_id?._id === currentUser._id);
             document.getElementById('history-list').innerHTML = hist.map(t => {
-                // TRUCO: Obtener fecha desde el ID de Mongo
                 const date = new Date(parseInt(t._id.substring(0, 8), 16) * 1000).toLocaleString();
                 const isDone = t.status === 'completed';
+                
+                // Aquí usamos el mapeo para obtener el nombre en Español
+                const payName = paymentLabels[t.payment.payment_method] || t.payment.payment_method;
                 
                 return `
                 <div class="card" style="padding:12px; border-left: 4px solid ${isDone ? 'var(--secondary)' : 'var(--danger)'}">
@@ -144,7 +153,7 @@
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <div style="font-size:0.9rem;"><i class="fa-solid fa-user"></i> ${t.rider_id?.name || 'Desc.'}</div>
-                            <small style="color:#666">${getPayIcon(t.payment.payment_method)} ${t.payment.payment_method}</small>
+                            <small style="color:#666">${getPayIcon(t.payment.payment_method)} ${payName}</small>
                         </div>
                         <div style="font-size:1.2rem; font-weight:bold; color:var(--dark);">S/. ${t.payment.amount}</div>
                     </div>
@@ -159,7 +168,7 @@
             return '<i class="fa-solid fa-money-bill-wave"></i>';
         }
 
-        // --- GESTIÓN VEHÍCULOS (Igual que antes) ---
+        // --- GESTIÓN VEHÍCULOS ---
         async function loadVehicles() {
             const res = await fetch('/api/vehicles/my');
             const vs = await res.json();
