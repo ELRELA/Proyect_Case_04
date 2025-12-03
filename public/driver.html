@@ -171,11 +171,13 @@
         // --- GESTIÓN VEHÍCULOS ---
         async function loadVehicles() {
             const res = await fetch('/api/vehicles/my');
+            
             const vs = await res.json();
+            const vehiclesToShow = vs.slice(0, 1);
             if(vs.length > 0 && !activeVehicleId) activeVehicleId = vs[0]._id;
             document.getElementById('veh-warning').style.display = activeVehicleId ? 'none' : 'block';
             
-            document.getElementById('my-vehicles-list').innerHTML = vs.map(v => `
+            document.getElementById('my-vehicles-list').innerHTML = vehiclesToShow.map(v => `
                 <div class="vehicle-card ${v._id === activeVehicleId ? 'selected' : ''}" onclick="selectVehicle('${v._id}')">
                     <div class="vehicle-icon"><i class="fa-solid ${v.type==='motorbike'?'fa-motorcycle':'fa-car'}"></i></div>
                     <div style="flex:1;">
@@ -223,3 +225,4 @@
     </script>
 </body>
 </html>
+
